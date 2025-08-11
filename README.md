@@ -1,4 +1,4 @@
-# CF-Server-Autocheck
+# 🖥️CF-Server-Autocheck
 
 ## 🚨本项目主要是参考了现有的nezha面板并通过和Ai沟通创作而成，有能力的小伙伴可自行进行完善或魔改🚨
 
