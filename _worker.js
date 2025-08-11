@@ -233,7 +233,7 @@ export default {
   // 获取服务器列表
   async function getServers(env) {
     try {
-      const data = await env.VPS_MONITOR?.get('servers');
+      const data = await env.SERVER_MONITOR?.get('servers');
       const servers = data ? JSON.parse(data) : [];
       return new Response(JSON.stringify(servers), {
         headers: { 'Content-Type': 'application/json' }
@@ -249,7 +249,7 @@ export default {
   // 获取统计信息
   async function getStats(env) {
     try {
-      const data = await env.VPS_MONITOR?.get('servers');
+      const data = await env.SERVER_MONITOR?.get('servers');
       const servers = data ? JSON.parse(data) : [];
       
       const today = new Date();
@@ -327,7 +327,7 @@ export default {
   async function addServer(request, env) {
     try {
       const server = await request.json();
-      const data = await env.VPS_MONITOR?.get('servers');
+      const data = await env.SERVER_MONITOR?.get('servers');
       const servers = data ? JSON.parse(data) : [];
       
       // 检查服务器名称是否已存在（忽略emoji，只比较纯文本）
@@ -363,7 +363,7 @@ export default {
       server.createdAt = new Date().toISOString();
       servers.push(server);
       
-      await env.VPS_MONITOR?.put('servers', JSON.stringify(servers));
+      await env.SERVER_MONITOR?.put('servers', JSON.stringify(servers));
       
       return new Response(JSON.stringify(server), {
         headers: { 'Content-Type': 'application/json' }
@@ -382,11 +382,11 @@ export default {
       const url = new URL(request.url);
       const serverId = url.pathname.split('/').pop();
       
-      const data = await env.VPS_MONITOR?.get('servers');
+      const data = await env.SERVER_MONITOR?.get('servers');
       const servers = data ? JSON.parse(data) : [];
       
       const filteredServers = servers.filter(s => s.id !== serverId);
-      await env.VPS_MONITOR?.put('servers', JSON.stringify(filteredServers));
+      await env.SERVER_MONITOR?.put('servers', JSON.stringify(filteredServers));
       
       return new Response(JSON.stringify({ success: true }), {
         headers: { 'Content-Type': 'application/json' }
@@ -406,7 +406,7 @@ export default {
       const serverId = url.pathname.split('/').pop();
       const updatedServerData = await request.json();
       
-      const data = await env.VPS_MONITOR?.get('servers');
+      const data = await env.SERVER_MONITOR?.get('servers');
       const servers = data ? JSON.parse(data) : [];
       
       const serverIndex = servers.findIndex(s => s.id === serverId);
@@ -420,7 +420,7 @@ export default {
       // 更新服务器信息
       servers[serverIndex] = { ...servers[serverIndex], ...updatedServerData };
       
-      await env.VPS_MONITOR?.put('servers', JSON.stringify(servers));
+      await env.SERVER_MONITOR?.put('servers', JSON.stringify(servers));
       
       return new Response(JSON.stringify({ success: true, server: servers[serverIndex] }), {
         headers: { 'Content-Type': 'application/json' }
@@ -436,7 +436,7 @@ export default {
   // 获取分类列表
   async function getCategories(env) {
     try {
-      const data = await env.VPS_MONITOR?.get('categories');
+      const data = await env.SERVER_MONITOR?.get('categories');
       const categories = data ? JSON.parse(data) : [];
       return new Response(JSON.stringify(categories), {
         headers: { 'Content-Type': 'application/json' }
@@ -453,14 +453,14 @@ export default {
   async function addCategory(request, env) {
     try {
       const category = await request.json();
-      const data = await env.VPS_MONITOR?.get('categories');
+      const data = await env.SERVER_MONITOR?.get('categories');
       const categories = data ? JSON.parse(data) : [];
       
       category.id = Date.now().toString();
       category.createdAt = new Date().toISOString();
       categories.push(category);
       
-      await env.VPS_MONITOR?.put('categories', JSON.stringify(categories));
+      await env.SERVER_MONITOR?.put('categories', JSON.stringify(categories));
       
       return new Response(JSON.stringify(category), {
         headers: { 'Content-Type': 'application/json' }
@@ -480,7 +480,7 @@ export default {
       const categoryId = url.pathname.split('/').pop();
       const updatedCategoryData = await request.json();
       
-      const data = await env.VPS_MONITOR?.get('categories');
+      const data = await env.SERVER_MONITOR?.get('categories');
       const categories = data ? JSON.parse(data) : [];
       
       const categoryIndex = categories.findIndex(c => c.id === categoryId);
@@ -498,7 +498,7 @@ export default {
         updatedAt: new Date().toISOString()
       };
       
-      await env.VPS_MONITOR?.put('categories', JSON.stringify(categories));
+      await env.SERVER_MONITOR?.put('categories', JSON.stringify(categories));
       
       return new Response(JSON.stringify({ success: true, category: categories[categoryIndex] }), {
         headers: { 'Content-Type': 'application/json' }
@@ -518,11 +518,11 @@ export default {
       const categoryId = url.pathname.split('/').pop();
       
       // 获取分类数据
-      const categoryData = await env.VPS_MONITOR?.get('categories');
+      const categoryData = await env.SERVER_MONITOR?.get('categories');
       const categories = categoryData ? JSON.parse(categoryData) : [];
       
       // 获取服务器数据
-      const serverData = await env.VPS_MONITOR?.get('servers');
+      const serverData = await env.SERVER_MONITOR?.get('servers');
       const servers = serverData ? JSON.parse(serverData) : [];
       
       // 将该分类下的所有服务器移动到默认分类（设置categoryId为空字符串）
@@ -537,8 +537,8 @@ export default {
       const filteredCategories = categories.filter(c => c.id !== categoryId);
       
       // 保存更新后的数据
-      await env.VPS_MONITOR?.put('categories', JSON.stringify(filteredCategories));
-      await env.VPS_MONITOR?.put('servers', JSON.stringify(updatedServers));
+      await env.SERVER_MONITOR?.put('categories', JSON.stringify(filteredCategories));
+      await env.SERVER_MONITOR?.put('servers', JSON.stringify(updatedServers));
       
       return new Response(JSON.stringify({ success: true }), {
         headers: { 'Content-Type': 'application/json' }
@@ -557,7 +557,7 @@ export default {
       const { categories: newOrder } = await request.json();
       
       // 获取现有分类数据
-      const categoryData = await env.VPS_MONITOR?.get('categories');
+      const categoryData = await env.SERVER_MONITOR?.get('categories');
       const categories = categoryData ? JSON.parse(categoryData) : [];
       
       // 更新分类的sortOrder
@@ -573,7 +573,7 @@ export default {
       updatedCategories.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
       
       // 保存到存储
-      await env.VPS_MONITOR?.put('categories', JSON.stringify(updatedCategories));
+      await env.SERVER_MONITOR?.put('categories', JSON.stringify(updatedCategories));
       
       return new Response(JSON.stringify({ success: true }), {
         headers: { 'Content-Type': 'application/json' }
@@ -598,7 +598,7 @@ export default {
         });
       }
       
-      await env.VPS_MONITOR?.put('servers', JSON.stringify(servers));
+      await env.SERVER_MONITOR?.put('servers', JSON.stringify(servers));
       
       return new Response(JSON.stringify({ success: true, message: 'Servers cleaned up successfully' }), {
         headers: { 'Content-Type': 'application/json' }
@@ -615,7 +615,7 @@ export default {
   async function getSettings(env) {
     try {
       const config = await getFullConfig(env);
-      const data = await env.VPS_MONITOR?.get('settings');
+      const data = await env.SERVER_MONITOR?.get('settings');
       const settings = data ? JSON.parse(data) : {
         telegram: {
           botToken: '',
@@ -709,7 +709,7 @@ export default {
         }
       }
 
-      await env.VPS_MONITOR?.put('settings', JSON.stringify(settings));
+      await env.SERVER_MONITOR?.put('settings', JSON.stringify(settings));
       
       return new Response(JSON.stringify({ success: true, message: 'Settings saved successfully' }), {
         headers: { 'Content-Type': 'application/json' }
@@ -730,12 +730,12 @@ export default {
     // 检查VPS到期状态并发送通知
   async function checkAndNotifyExpiredVPS(env) {
     try {
-      if (!env.VPS_MONITOR) {
-        console.error('VPS_MONITOR KV namespace is not bound');
+      if (!env.SERVER_MONITOR) {
+        console.error('SERVER_MONITOR KV namespace is not bound');
         return;
       }
 
-      const data = await env.VPS_MONITOR.get('servers');
+      const data = await env.SERVER_MONITOR.get('servers');
       if (!data) return;
       
       // 获取全局设置
@@ -3130,6 +3130,49 @@ export default {
           .notification-close:hover {
               background: var(--hover-bg);
               color: var(--text-secondary);
+          }
+
+          /* 勾选框包装器样式 */
+          .checkbox-wrapper {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              margin-bottom: 8px;
+          }
+
+          .checkbox-wrapper input[type="checkbox"] {
+              width: 16px;
+              height: 16px;
+              margin: 0;
+              cursor: pointer;
+              accent-color: var(--primary-color);
+              border-radius: 3px;
+          }
+
+          .checkbox-wrapper label {
+              margin: 0;
+              cursor: pointer;
+              color: var(--text-primary);
+              font-weight: 500;
+              font-size: 14px;
+              line-height: 1.4;
+              user-select: none;
+          }
+
+          /* 移动端适配 */
+          @media (max-width: 768px) {
+              .checkbox-wrapper {
+                  gap: 10px;
+              }
+
+              .checkbox-wrapper input[type="checkbox"] {
+                  width: 18px;
+                  height: 18px;
+              }
+
+              .checkbox-wrapper label {
+                  font-size: 15px;
+              }
           }
       </style>
   </head>
@@ -8582,7 +8625,7 @@ async function handleLogout(request) {
 
 // 获取设置数据的辅助函数
 async function getSettingsData(env) {
-    const data = await env.VPS_MONITOR?.get('settings');
+    const data = await env.SERVER_MONITOR?.get('settings');
     return data ? JSON.parse(data) : {};
 }
 
@@ -8973,16 +9016,16 @@ function getThemeToggleCSS() {
 // 检查KV绑定状态
 async function checkKVBinding(env) {
   try {
-    if (!env.VPS_MONITOR) {
+    if (!env.SERVER_MONITOR) {
       return {
         isValid: false,
-        error: 'VPS_MONITOR KV namespace is not bound',
+        error: 'SERVER_MONITOR KV namespace is not bound',
         message: 'KV存储空间未绑定'
       };
     }
     
     // 尝试访问KV存储
-    await env.VPS_MONITOR.get('test');
+    await env.SERVER_MONITOR.get('test');
     return {
       isValid: true,
       message: 'KV存储空间已正确绑定'
@@ -9293,7 +9336,7 @@ function getSetupGuideHTML() {
                     <li>找到您的 Worker 项目，点击进入</li>
                     <li>转到 "设置" → "变量"</li>
                     <li>在 "KV 命名空间绑定" 部分点击 "添加绑定"</li>
-                    <li>变量名称填写：<code>VPS_MONITOR</code></li>
+                    <li>变量名称填写：<code>SERVER_MONITOR</code></li>
                     <li>选择或创建一个 KV 命名空间</li>
                     <li>点击 "保存并部署"</li>
                 </ol>
