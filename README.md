@@ -20,9 +20,9 @@
     <summary>其他页面效果展示</summary>
 
 ![card](images/readme/card.jpg)
-![add](images/readme/add.png)
-![classify](images/readme/classify.png)
-![setting](images/readme/setting-.png)
+![add](images/readme/add.jpg)
+![classify](images/readme/classify.jpg)
+![setting](images/readme/setting.jpg)
 
 </details>
 
