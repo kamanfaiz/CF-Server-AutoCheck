@@ -19,11 +19,11 @@ const TELEGRAM_BOT_TOKEN = "";        // 在此填写Telegram Bot Token，或留
 const TELEGRAM_CHAT_ID = "";          // 在此填写Telegram Chat ID，或留空使用其他方式配置，可选择外置变量TG_ID
 
 // LOGO配置
-const LOGO_IMAGE_URL = "https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/img/logo.svg"; // LOGO图片链接
+const LOGO_IMAGE_URL = "https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/images/logo.svg"; // LOGO图片链接
 
 // 背景图配置
-const DESKTOP_BACKGROUND = "https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/img/stream.webp"; // 桌面端背景图链接
-const MOBILE_BACKGROUND = "https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/img/cloud.webp"; // 移动端背景图链接
+const DESKTOP_BACKGROUND = "https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/imgages/background/stream.webp"; // 桌面端背景图链接
+const MOBILE_BACKGROUND = "https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/images/background/cloud.webp"; // 移动端背景图链接
 const DARK_MODE_OVERLAY_OPACITY = 0.35; // 深色模式下背景图覆盖层透明度 (0-1)，用于确保文字可读性
 
 // ==========================================
