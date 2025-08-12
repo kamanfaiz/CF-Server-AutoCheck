@@ -9778,7 +9778,7 @@ function getSetupGuideHTML() {
     <div class="setup-container">
         <div class="setup-header">
             <img src="${LOGO_IMAGE_URL}" alt="VPS Monitor">
-            <h1>欢迎使用 VPS Monitor</h1>
+            <h1>欢迎使用服务器到期监控系统</h1>
             <p>首次使用需要进行简单配置，请按照以下步骤完成初始化</p>
         </div>
         
