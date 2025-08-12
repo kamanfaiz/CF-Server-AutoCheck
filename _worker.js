@@ -52,7 +52,8 @@ function parseCookies(cookieHeader) {
 
 // 生成认证token（基于密码的固定token，添加时间戳用于过期验证）
 async function generateToken(password, timestamp = null) {
-    const ts = timestamp || Date.now();
+    // 统一使用秒级时间戳，确保与验证逻辑一致
+    const ts = timestamp || Math.floor(Date.now() / 1000);
     const message = `${password}:${ts}`;
     const msgBuffer = new TextEncoder().encode(message);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
@@ -109,7 +110,8 @@ export default {
       // 检查是否需要登录
       const authRequired = await isAuthRequired(env);
       if (authRequired) {
-        const isAuthenticated = await checkAuth(request, env);
+        const authResult = await checkAuth(request, env);
+        const isAuthenticated = authResult.isAuthenticated;
         
         // 如果是dashboard路径且未认证，重定向到登录页
         if (url.pathname === '/dashboard' && !isAuthenticated) {
@@ -8847,39 +8849,41 @@ async function isAuthRequired(env) {
 // 7. 认证相关函数
 // ==========================================
 
-// 检查认证状态
+// 检查认证状态（返回详细的认证信息）
 async function checkAuth(request, env) {
     try {
         const cookieHeader = request.headers.get('Cookie');
-        if (!cookieHeader) return false;
+        if (!cookieHeader) return { isAuthenticated: false };
         
         const cookies = parseCookies(cookieHeader);
         const token = cookies['auth_token'];
-        if (!token) return false;
+        if (!token) return { isAuthenticated: false };
         
         // 验证token
         const config = await getFullConfig(env);
-        if (!config.auth.enabled) return true;
+        if (!config.auth.enabled) return { isAuthenticated: true };
         
         // 解析token格式：hash:timestamp
         const [hash, timestampStr] = token.split(':');
-        if (!hash || !timestampStr) return false;
+        if (!hash || !timestampStr) return { isAuthenticated: false };
         
         const timestamp = parseInt(timestampStr);
         const currentTime = Math.floor(Date.now() / 1000);
         
-        // 检查token是否过期（12小时有效期）
-        const TOKEN_VALIDITY = 12 * 60 * 60; // 12小时
+        // 检查token是否过期（30分钟有效期）
+        const TOKEN_VALIDITY = 30 * 60; // 30分钟
         if (currentTime - timestamp > TOKEN_VALIDITY) {
-            return false;
+            return { isAuthenticated: false };
         }
         
         // 验证token签名
         const expectedToken = await generateToken(config.auth.password, timestamp);
-        return token === expectedToken;
+        const isValid = token === expectedToken;
+        
+        return { isAuthenticated: isValid };
     } catch (error) {
         console.error('Auth check error:', error);
-        return false;
+        return { isAuthenticated: false };
     }
 }
 
@@ -8933,7 +8937,7 @@ async function handleLogin(request, env) {
             status: 200,
             headers: { 
                 'Content-Type': 'application/json',
-                'Set-Cookie': `auth_token=${token}; Path=/; HttpOnly; ${secureFlag}SameSite=Strict; Max-Age=43200`
+                'Set-Cookie': `auth_token=${token}; Path=/; HttpOnly; ${secureFlag}SameSite=Strict; Max-Age=1800`
             }
         });
         
