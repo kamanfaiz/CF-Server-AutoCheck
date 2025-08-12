@@ -133,7 +133,8 @@ export default {
         
         // 如果是dashboard路径且已认证，显示主页面
         if (url.pathname === '/dashboard' && isAuthenticated) {
-          return new Response(getHTML(), {
+          const config = await getFullConfig(env);
+          return new Response(getHTML(config), {
             headers: {
               'Content-Type': 'text/html;charset=UTF-8',
             },
@@ -142,7 +143,8 @@ export default {
       } else {
         // 如果未启用认证，直接显示主页面（保持向后兼容）
         if (url.pathname === '/' || url.pathname === '/dashboard') {
-          return new Response(getHTML(), {
+          const config = await getFullConfig(env);
+          return new Response(getHTML(config), {
             headers: {
               'Content-Type': 'text/html;charset=UTF-8',
             },
@@ -614,40 +616,32 @@ export default {
   // 获取设置
   async function getSettings(env) {
     try {
-      const config = await getFullConfig(env);
-      const data = await env.SERVER_MONITOR?.get('settings');
-      const settings = data ? JSON.parse(data) : {
+      // 始终检查外置配置变化，确保配置同步
+      const needsForceSync = await checkAndStoreExternalConfigState(env);
+      const config = await getFullConfig(env, needsForceSync);
+      // 使用同步后的设置，而不是直接从KV读取
+      const settings = {
         telegram: {
-          botToken: '',
-          chatId: '',
-          enabled: false
+          botToken: config.telegram.configSource.hasExternal ? config.telegram.botToken : (config.telegram.enabled ? config.telegram.botToken : ''),
+          chatId: config.telegram.configSource.hasExternal ? config.telegram.chatId : (config.telegram.enabled ? config.telegram.chatId : ''),
+          enabled: config.telegram.enabled
         },
         auth: {
-          enabled: false,
-          password: ''
+          enabled: config.auth.enabled,
+          password: config.auth.configSource.hasExternal ? config.auth.password : (config.auth.password || '')
         },
-        globalNotifyDays: 14,
-        siteTitle: '',
-        welcomeMessage: '',
-        nezhaMonitorUrl: ''
+        globalNotifyDays: config.globalNotifyDays,
+        siteTitle: config.siteTitle,
+        welcomeMessage: config.welcomeMessage,
+        nezhaMonitorUrl: config.nezhaMonitorUrl,
+        customLogoUrl: config.customLogoUrl,
+        customDesktopBackgroundUrl: config.customDesktopBackgroundUrl,
+        customMobileBackgroundUrl: config.customMobileBackgroundUrl
       };
 
       // 添加配置来源信息
       settings.telegram.configSource = config.telegram.configSource;
       settings.auth.configSource = config.auth.configSource;
-      
-      // 如果存在外置配置，自动启用Telegram通知并设置相应的值
-      if (config.telegram.configSource.hasExternal) {
-        settings.telegram.enabled = true;
-        settings.telegram.botToken = config.telegram.botToken;
-        settings.telegram.chatId = config.telegram.chatId;
-      }
-      
-      // 如果存在外置配置，自动启用登录认证并设置相应的值
-      if (config.auth.configSource.hasExternal) {
-        settings.auth.enabled = true;
-        settings.auth.password = config.auth.password;
-      }
 
       return new Response(JSON.stringify(settings), {
         headers: { 'Content-Type': 'application/json' }
@@ -895,16 +889,23 @@ export default {
 // ==========================================
 
   // 主页面HTML
-  function getHTML() {
+  function getHTML(settings = {}) {
+    // 获取自定义设置，如果没有则使用默认值
+    const siteTitle = (settings.siteTitle && settings.siteTitle.trim() !== '') ? settings.siteTitle : '服务器到期监控';
+    const welcomeMessage = (settings.welcomeMessage && settings.welcomeMessage.trim() !== '') ? settings.welcomeMessage : 'Hello!';
+    // 获取自定义Logo URL，如果没有则使用默认值
+    const logoUrl = (settings.customLogoUrl && settings.customLogoUrl.trim() !== '') ? settings.customLogoUrl : LOGO_IMAGE_URL;
+    // 根据Logo格式确定CSS类
+    const logoClass = logoUrl.toLowerCase().includes('.svg') || logoUrl.toLowerCase().includes('format=svg') ? 'logo-image svg-logo' : 'logo-image raster-logo';
     return `<!DOCTYPE html>
   <html lang="zh-CN">
   <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-      <title>VPS Monitor - 服务器监控面板</title>
+      <title>${siteTitle} - 服务器监控面板</title>
       <!-- Favicon -->
-      <link rel="icon" type="image/svg+xml" href="https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/img/logo.svg">
+      <link rel="icon" type="image/svg+xml" href="https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/images/logo.svg">
       <!-- 阿里巴巴矢量图标库 -->
               <link rel="stylesheet" href="${ICONFONT_CSS_URL}">
         <script src="${ICONFONT_JS_URL}"></script>
@@ -938,6 +939,24 @@ export default {
               display: flex;
               flex-direction: column;
               position: relative;
+              /* 移动端优化 */
+              -webkit-overflow-scrolling: touch;
+          }
+          
+          /* 移动端背景图优化 */
+          @media (max-width: 768px) {
+              body {
+                  min-height: 100vh;
+              }
+              
+              #fixed-bg-container {
+                  position: fixed !important;
+                  width: 100vw !important;
+                  height: 100vh !important;
+                  /* 移动端特殊处理：确保背景图固定为视口大小 */
+                  min-height: 100vh;
+                  background-attachment: scroll !important;
+              }
           }
           
 
@@ -999,8 +1018,17 @@ export default {
               width: 26px;
               height: 26px;
               vertical-align: middle;
+              transition: filter 0.3s ease, opacity 0.3s ease;
+          }
+          
+          /* SVG Logo - 使用滤镜适配主题 */
+          .logo-image.svg-logo {
               filter: brightness(0) saturate(100%) invert(var(--logo-invert)) sepia(100%) saturate(var(--logo-saturate)) hue-rotate(var(--logo-hue)) brightness(var(--logo-brightness)) contrast(var(--logo-contrast));
-              transition: filter 0.3s ease;
+          }
+          
+          /* PNG/JPG/WebP Logo - 保持原始颜色 */
+          .logo-image.raster-logo {
+              filter: none;
           }
           
 
@@ -3183,7 +3211,7 @@ export default {
       <!-- 顶部导航栏 -->
       <nav class="navbar">
           <div class="navbar-content">
-              <div class="logo"><img src="${LOGO_IMAGE_URL}" alt="Logo" class="logo-image"> 服务器到期监控</div>
+              <div class="logo"><img src="${logoUrl}" alt="Logo" class="${logoClass}"> ${siteTitle}</div>
               <div class="nav-actions">
                   <div class="theme-toggle-wrapper">
                       <label class="theme-toggle" for="theme-switch">
@@ -3211,7 +3239,7 @@ export default {
           <!-- Overview区域 -->
           <div class="overview-section">
               <div class="overview-left">
-                  <div class="overview-title">Hello!</div>
+                  <div class="overview-title">${welcomeMessage}</div>
                   <div class="overview-time"><span class="current-time" id="currentTime"></span></div>
                   
                   <!-- 统计卡片 -->
@@ -3917,7 +3945,6 @@ export default {
                       return settings.customDesktopBackgroundUrl || '';
                   }
               } catch (error) {
-                  console.error('Failed to get custom background URL:', error);
                   return '';
               }
           }
@@ -3929,20 +3956,25 @@ export default {
                   const settings = await response.json();
                   return settings.customLogoUrl || '';
               } catch (error) {
-                  console.error('Failed to get custom logo URL:', error);
                   return '';
               }
           }
           
-          // 初始化页面Logo
-          async function initPageLogo() {
-              const customLogoUrl = await getCustomLogoUrl();
-              const finalLogoUrl = customLogoUrl || '${LOGO_IMAGE_URL}';
+          // 检测Logo文件格式并应用相应的CSS类
+          function applyLogoStyleByFormat(logoElement, logoUrl) {
+              if (!logoElement || !logoUrl) return;
               
-              const logoElement = document.querySelector('.logo');
-              if (logoElement) {
-                  const currentTitle = logoElement.textContent.trim().replace(/^\s*\S+\s*/, '') || '服务器到期监控';
-                  logoElement.innerHTML = '<img src="' + finalLogoUrl + '" alt="Logo" class="logo-image"> ' + currentTitle;
+              // 移除现有的格式类
+              logoElement.classList.remove('svg-logo', 'raster-logo');
+              
+              // 从URL中提取文件扩展名
+              const url = logoUrl.toLowerCase();
+              if (url.includes('.svg') || url.includes('format=svg')) {
+                  // SVG格式 - 使用滤镜适配主题
+                  logoElement.classList.add('svg-logo');
+              } else {
+                  // 其他格式 (PNG, JPG, WebP等) - 保持原始颜色
+                  logoElement.classList.add('raster-logo');
               }
           }
           
@@ -4083,35 +4115,6 @@ export default {
               return colorMap[normalizedValue] || colorMap[colorValue] || 'blue';
           }
           
-          // 迁移旧的颜色数据（可选的数据迁移功能）
-          async function migrateColorData() {
-              try {
-                  const response = await fetch('/api/servers');
-                  if (!response.ok) return;
-                  
-                  const servers = await response.json();
-                  let needUpdate = false;
-                  
-                  const updatedServers = servers.map(server => {
-                      if (server.tagColor && server.tagColor.startsWith('#')) {
-                          needUpdate = true;
-                          return {
-                              ...server,
-                              tagColor: getColorName(server.tagColor)
-                          };
-                      }
-                      return server;
-                  });
-                  
-                  if (needUpdate) {
-                      console.log('正在迁移颜色数据...');
-                      // 这里可以添加批量更新的逻辑
-                      // 但是由于安全考虑，我们只在前端进行转换
-                  }
-              } catch (error) {
-                  console.log('颜色数据迁移跳过:', error.message);
-              }
-          }
           
           // 管理导航栏响应式布局
           function manageNavbarLayout() {
@@ -4188,10 +4191,6 @@ export default {
                   }, 150);
               });
               await initBackground(); // 初始化背景图
-              await initPageLogo(); // 初始化Logo
-              
-              // 迁移旧的颜色数据（仅在开发时执行一次）
-              // migrateColorData();
               
               // 初始化排序状态（默认按添加时间升序）
               setTimeout(() => {
@@ -4267,20 +4266,42 @@ export default {
                       document.body.appendChild(bgContainer);
                   }
                   
-                  // 设置固定背景容器样式
-                  bgContainer.style.cssText = \`
-                      position: fixed;
-                      top: 0;
-                      left: 0;
-                      width: 100vw;
-                      height: 100vh;
-                      background-image: url('\${finalBgUrl}');
-                      background-size: cover;
-                      background-position: center;
-                      background-repeat: no-repeat;
-                      z-index: -1;
-                      pointer-events: none;
-                  \`;
+                  // 设置固定背景容器样式 - 移动端优化
+                  const isMobile = window.innerWidth <= 768;
+                  
+                  if (isMobile) {
+                      // 移动端：使用固定视口尺寸，不受页面内容影响
+                      bgContainer.style.cssText = \`
+                          position: fixed;
+                          top: 0;
+                          left: 0;
+                          width: 100vw;
+                          height: 100vh;
+                          background-image: url('\${finalBgUrl}');
+                          background-size: cover;
+                          background-position: center;
+                          background-repeat: no-repeat;
+                          z-index: -1;
+                          pointer-events: none;
+                          /* 移动端特殊处理：避免地址栏影响 */
+                          min-height: 100vh;
+                      \`;
+                  } else {
+                      // 桌面端：标准fixed布局
+                      bgContainer.style.cssText = \`
+                          position: fixed;
+                          top: 0;
+                          left: 0;
+                          width: 100vw;
+                          height: 100vh;
+                          background-image: url('\${finalBgUrl}');
+                          background-size: cover;
+                          background-position: center;
+                          background-repeat: no-repeat;
+                          z-index: -1;
+                          pointer-events: none;
+                      \`;
+                  }
                   
                   // 创建深色模式覆盖层样式
                   let overlayStyle = document.getElementById('bg-overlay-style');
@@ -4307,6 +4328,149 @@ export default {
                   // 监听窗口大小变化，更新背景容器尺寸
                   const updateBgSize = () => {
                       if (bgContainer) {
+                          const isMobile = window.innerWidth <= 768;
+                          bgContainer.style.position = 'fixed';
+                          bgContainer.style.width = '100vw';
+                          bgContainer.style.height = '100vh';
+                      }
+                  };
+                  
+                  // 移除可能存在的旧监听器
+                  window.removeEventListener('resize', window.bgResizeHandler);
+                  // 添加新的监听器
+                  window.bgResizeHandler = updateBgSize;
+                  window.addEventListener('resize', window.bgResizeHandler);
+                  
+                  // 更新背景图相关样式
+                  updateBackgroundStyles(true);
+              }
+          }
+          
+          // 使用传入的设置更新背景图（避免重新从API获取）
+          async function updateBackgroundImageWithSettings(settings) {
+              // 检查背景图是否被启用
+              const isEnabled = getBackgroundEnabled();
+              if (!isEnabled) {
+                  // 背景图被禁用，清除背景图和相关样式
+                  document.body.style.backgroundImage = '';
+                  // 重置body背景色，让CSS主题变量生效
+                  document.body.style.backgroundColor = '';
+                  document.body.style.position = '';
+                  document.body.style.minHeight = '';
+                  
+                  // 移除固定背景容器
+                  const bgContainer = document.getElementById('fixed-bg-container');
+                  if (bgContainer) {
+                      bgContainer.remove();
+                  }
+                  // 移除覆盖层样式
+                  const overlayStyle = document.getElementById('bg-overlay-style');
+                  if (overlayStyle) {
+                      overlayStyle.remove();
+                  }
+                  // 确保根据当前主题设置正确的背景色
+                  updateBackgroundStyles(false);
+                  return;
+              }
+              
+              // 根据屏幕宽度选择背景图
+              const isMobile = window.innerWidth <= 768;
+              
+              // 直接使用传入的设置数据
+              const customBgUrl = isMobile ? (settings.customMobileBackgroundUrl || '') : (settings.customDesktopBackgroundUrl || '');
+              const defaultBgUrl = isMobile ? mobileBackgroundImageUrl : backgroundImageUrl;
+              const finalBgUrl = customBgUrl || defaultBgUrl;
+              
+              // 移除可能存在的旧样式（伪元素样式已弃用）
+              const existingMobileStyle = document.getElementById('mobile-bg-style');
+              if (existingMobileStyle) {
+                  existingMobileStyle.remove();
+              }
+              const existingDesktopStyle = document.getElementById('desktop-bg-style');
+              if (existingDesktopStyle) {
+                  existingDesktopStyle.remove();
+              }
+              
+              // 设置背景图（优先使用自定义背景图）
+              if (finalBgUrl) {
+                  // 移除body上的背景设置，改用固定背景容器
+                  document.body.style.backgroundImage = '';
+                  document.body.style.backgroundColor = 'transparent';
+                  document.body.style.position = 'relative';
+                  document.body.style.minHeight = '100vh';
+                  
+                  // 创建或更新固定背景容器
+                  let bgContainer = document.getElementById('fixed-bg-container');
+                  if (!bgContainer) {
+                      bgContainer = document.createElement('div');
+                      bgContainer.id = 'fixed-bg-container';
+                      document.body.appendChild(bgContainer);
+                  }
+                  
+                  // 设置固定背景容器样式 - 移动端优化
+                  const isMobile = window.innerWidth <= 768;
+                  
+                  if (isMobile) {
+                      // 移动端：使用固定视口尺寸，不受页面内容影响
+                      bgContainer.style.cssText = \`
+                          position: fixed;
+                          top: 0;
+                          left: 0;
+                          width: 100vw;
+                          height: 100vh;
+                          background-image: url('\${finalBgUrl}');
+                          background-size: cover;
+                          background-position: center;
+                          background-repeat: no-repeat;
+                          z-index: -2;
+                          pointer-events: none;
+                          /* 移动端特殊处理：避免地址栏影响 */
+                          min-height: 100vh;
+                      \`;
+                  } else {
+                      // 桌面端：标准fixed布局
+                      bgContainer.style.cssText = \`
+                          position: fixed;
+                          top: 0;
+                          left: 0;
+                          width: 100vw;
+                          height: 100vh;
+                          background-image: url('\${finalBgUrl}');
+                          background-size: cover;
+                          background-position: center;
+                          background-repeat: no-repeat;
+                          z-index: -2;
+                          pointer-events: none;
+                      \`;
+                  }
+                  
+                  // 添加或更新深色模式覆盖层样式
+                  let overlayStyle = document.getElementById('bg-overlay-style');
+                  if (!overlayStyle) {
+                      overlayStyle = document.createElement('style');
+                      overlayStyle.id = 'bg-overlay-style';
+                      document.head.appendChild(overlayStyle);
+                  }
+                  
+                  overlayStyle.textContent = \`
+                      #fixed-bg-container::after {
+                          content: '';
+                          position: absolute;
+                          top: 0;
+                          left: 0;
+                          width: 100%;
+                          height: 100%;
+                          background: var(--background-overlay);
+                          pointer-events: none;
+                          z-index: 1;
+                      }
+                  \`;
+                  
+                  // 监听窗口大小变化，更新背景容器尺寸
+                  const updateBgSize = () => {
+                      if (bgContainer) {
+                          const isMobile = window.innerWidth <= 768;
+                          bgContainer.style.position = 'fixed';
                           bgContainer.style.width = '100vw';
                           bgContainer.style.height = '100vh';
                       }
@@ -4407,7 +4571,6 @@ export default {
                       showNotification('请先在设置中配置哪吒监控网站URL', 'warning');
                   }
               } catch (error) {
-                  console.error('打开哪吒监控失败:', error);
                   showNotification('打开哪吒监控失败: ' + error.message, 'error');
               }
           }
@@ -4439,7 +4602,7 @@ export default {
                       manageNavbarLayout();
                   }
               } catch (error) {
-                  console.error('Failed to check auth status:', error);
+                  // 静默处理认证状态检查失败
               }
           }
           
@@ -4668,7 +4831,7 @@ export default {
                   await initializePageDisplay(); // 初始化页面显示
                   renderServers();
               } catch (error) {
-                  console.error('Failed to load data:', error);
+                  // 静默处理数据加载失败
               }
           }
           
@@ -4679,7 +4842,7 @@ export default {
                   const settings = await response.json();
                   updatePageDisplay(settings);
               } catch (error) {
-                  console.error('Failed to load settings for page display:', error);
+                  // 静默处理页面显示设置加载失败
               }
           }
           
@@ -4727,10 +4890,10 @@ export default {
                       });
                       
                       if (!response.ok) {
-                          console.warn('Failed to sync server cleanup to backend');
+                          // 静默处理后端同步失败
                       }
                   } catch (error) {
-                      console.warn('Failed to sync server cleanup:', error);
+                      // 静默处理清理同步失败
                   }
               }
           }
@@ -4946,6 +5109,49 @@ export default {
               if (!isEnabled) {
                   passwordInput.value = '';
                   confirmPasswordInput.value = '';
+                  // 清除验证样式
+                  confirmPasswordInput.classList.remove('input-error', 'input-success');
+              }
+          }
+          
+          // 密码确认验证
+          function validatePasswordConfirm() {
+              const passwordInput = document.getElementById('loginPassword');
+              const confirmPasswordInput = document.getElementById('confirmPassword');
+              
+              if (!passwordInput || !confirmPasswordInput) return;
+              
+              const password = passwordInput.value;
+              const confirmPassword = confirmPasswordInput.value;
+              
+              // 清除之前的样式
+              confirmPasswordInput.classList.remove('input-error', 'input-success');
+              
+              // 如果确认密码为空，不显示任何样式
+              if (!confirmPassword) return;
+              
+              // 如果密码不一致，显示错误样式
+              if (password !== confirmPassword) {
+                  confirmPasswordInput.classList.add('input-error');
+              } else {
+                  // 如果密码一致且不为空，显示成功样式
+                  if (password && confirmPassword) {
+                      confirmPasswordInput.classList.add('input-success');
+                  }
+              }
+          }
+          
+          // 初始化密码确认验证事件监听器
+          function initPasswordValidation() {
+              const passwordInput = document.getElementById('loginPassword');
+              const confirmPasswordInput = document.getElementById('confirmPassword');
+              
+              if (passwordInput && confirmPasswordInput) {
+                  // 为登录密码输入框添加input事件监听器
+                  passwordInput.addEventListener('input', validatePasswordConfirm);
+                  
+                  // 为确认密码输入框添加input事件监听器
+                  confirmPasswordInput.addEventListener('input', validatePasswordConfirm);
               }
           }
           
@@ -4985,8 +5191,11 @@ export default {
           // 应用配置的启用/禁用状态
           toggleTelegramConfig();
           toggleAuthConfig();
+          
+          // 初始化密码确认验证
+          initPasswordValidation();
               } catch (error) {
-                  console.error('Failed to load settings:', error);
+                  // 静默处理设置加载失败
               }
           }
           
@@ -5050,7 +5259,6 @@ export default {
                       throw new Error(errorData.description || '发送失败');
                   }
               } catch (error) {
-                  console.error('Telegram notification test failed:', error);
                   showNotification('测试通知发送失败：' + (error.message || '网络连接错误'), 'error');
               } finally {
                   testBtn.innerHTML = originalHTML;
@@ -5064,7 +5272,6 @@ export default {
                   const response = await fetch('/api/servers');
                   servers = await response.json();
               } catch (error) {
-                  console.error('Failed to load servers:', error);
                   servers = [];
               }
           }
@@ -5089,7 +5296,6 @@ export default {
                       }
                   });
               } catch (error) {
-                  console.error('Failed to load categories:', error);
                   categories = [];
               }
           }
@@ -5109,7 +5315,7 @@ export default {
                   document.getElementById('expiringSoon').innerHTML = 
                       \`<span class="status-indicator warning"></span>\${stats.expiringSoon}\`;
               } catch (error) {
-                  console.error('Failed to load stats:', error);
+                  // 静默处理统计数据加载失败
               }
           }
           
@@ -5458,7 +5664,6 @@ export default {
                   const defaultNotifyDays = settings.globalNotifyDays || 14;
                   document.getElementById('notifyDays').value = defaultNotifyDays;
               } catch (error) {
-                  console.error('Failed to load settings for default notify days:', error);
                   document.getElementById('notifyDays').value = 14; // 使用硬编码默认值
               }
           }
@@ -5479,7 +5684,7 @@ export default {
                       categorySelect.appendChild(option);
                   });
               } catch (error) {
-                  console.error('Failed to load categories:', error);
+                  // 静默处理分类加载失败
               }
           }
           
@@ -5781,7 +5986,7 @@ export default {
                           }
                       }
                   } catch (error) {
-                      console.error('检查服务器名称失败:', error);
+                      // 静默处理服务器名称检查失败
                       return false;
                   }
                             }
@@ -6094,6 +6299,23 @@ export default {
                   const hasExternalTelegramConfig = enableTelegramCheckbox.disabled; // 如果复选框被禁用，说明存在外置配置
                   const hasExternalAuthConfig = enableAuthCheckbox.disabled; // 如果复选框被禁用，说明存在外置配置
                   
+
+                  
+                  // 获取当前设置以检测密码变化
+                  let currentAuthEnabled = false;
+                  let currentPassword = '';
+                  try {
+                      const currentResponse = await fetch('/api/settings');
+                      if (currentResponse.ok) {
+                          const currentSettings = await currentResponse.json();
+                          currentAuthEnabled = currentSettings.auth?.enabled || false;
+                          // 只有当认证启用时，当前密码才有意义
+                          currentPassword = currentAuthEnabled ? (currentSettings.auth?.password || '') : '';
+                      }
+                  } catch (error) {
+                      console.error('Failed to get current settings:', error);
+                  }
+                  
                   const formData = {
                       telegram: {
                           enabled: enableTelegramCheckbox.checked,
@@ -6102,7 +6324,7 @@ export default {
                       },
                       auth: {
                           enabled: enableAuthCheckbox.checked,
-                          password: document.getElementById('loginPassword').value.trim()
+                          password: enableAuthCheckbox.checked ? document.getElementById('loginPassword').value.trim() : ''
                       },
                       globalNotifyDays: parseInt(document.getElementById('globalNotifyDays').value) || 14,
                       siteTitle: document.getElementById('siteTitle').value.trim(),
@@ -6155,8 +6377,49 @@ export default {
                       if (response.ok) {
                           showNotification('设置保存成功！', 'success');
                           hideSettingsModal();
-                          // 更新页面显示
+                          
+                          // 立即更新页面显示
                           await updatePageDisplay(formData);
+                          
+                          // 检查需要执行的认证相关操作
+                          const authAction = checkAuthAction(currentAuthEnabled, currentPassword, formData, hasExternalAuthConfig);
+                          
+                          if (authAction === 'reauth') {
+                              // 需要重新登录
+                              showNotification('认证设置已更改，请重新登录', 'info');
+                              
+                              // 延迟跳转，让用户看到成功提示
+                              setTimeout(async () => {
+                                  // HttpOnly Cookie无法通过JavaScript删除，需要调用服务器API
+                                  try {
+                                      // 调用登出API清除服务器端的Cookie
+                                      const logoutResponse = await fetch('/logout', {
+                                          method: 'GET',
+                                          credentials: 'same-origin'
+                                      });
+                                      
+                                      if (logoutResponse.ok) {
+                                          // 跳转到登录页面
+                                          window.location.href = '/';
+                                      } else {
+                                          window.location.reload(true);
+                                      }
+                                  } catch (error) {
+                                      window.location.reload(true);
+                                  }
+                              }, 1500);
+                          } else if (authAction === 'refresh') {
+                              // 需要刷新页面（禁用认证）
+                              showNotification('认证已禁用，页面即将刷新', 'info');
+                              
+                              // 延迟刷新，让用户看到成功提示
+                              setTimeout(() => {
+                                  window.location.reload();
+                              }, 1500);
+                          } else {
+                              // 正常更新页面显示
+                              await updatePageDisplay(formData);
+                          }
                       } else {
                           const errorData = await response.json();
                           throw new Error(errorData.error || '保存设置失败');
@@ -6165,6 +6428,35 @@ export default {
                       showNotification('错误：' + error.message, 'error');
                   }
               });
+              
+              // 检查是否需要重新登录或刷新页面
+              function checkAuthAction(currentAuthEnabled, currentPassword, formData, hasExternalAuthConfig) {
+                  // 如果使用外置配置，不需要特殊处理
+                  if (hasExternalAuthConfig) {
+                      return 'none';
+                  }
+                  
+                  const newAuthEnabled = formData.auth.enabled;
+                  const newPassword = formData.auth.password;
+                  
+
+                  
+                  // 情况1：从启用变为禁用 → 刷新页面
+                  if (currentAuthEnabled && !newAuthEnabled) {
+                      return 'refresh';
+                  }
+                  
+                  // 情况2：从禁用变为启用 → 重新登录（无论密码是否相同）
+                  if (!currentAuthEnabled && newAuthEnabled && newPassword) {
+                      return 'reauth';
+                  }
+                  
+                  // 情况3：认证保持启用状态，但密码发生了变化 → 重新登录
+                  if (currentAuthEnabled && newAuthEnabled && currentPassword && newPassword && currentPassword !== newPassword) {
+                      return 'reauth';
+                  }
+                  return 'none';
+              }
               
               // 添加ESC键关闭功能
               document.addEventListener('keydown', function(e) {
@@ -6326,13 +6618,15 @@ export default {
               // 更新网站标题（如果没有自定义值则使用默认值）
               const siteTitle = settings.siteTitle || '服务器到期监控';
               
-              // 获取自定义Logo URL，如果没有则使用默认
-              const customLogoUrl = await getCustomLogoUrl();
+              // 直接使用传入的设置数据中的自定义Logo URL，如果没有则使用默认
+              const customLogoUrl = settings.customLogoUrl || '';
               const finalLogoUrl = customLogoUrl || '${LOGO_IMAGE_URL}';
               
               const logoElement = document.querySelector('.logo');
               if (logoElement) {
-                  logoElement.innerHTML = '<img src="' + finalLogoUrl + '" alt="Logo" class="logo-image"> ' + siteTitle;
+                  // 根据Logo格式确定CSS类
+                  const logoClass = finalLogoUrl.toLowerCase().includes('.svg') || finalLogoUrl.toLowerCase().includes('format=svg') ? 'logo-image svg-logo' : 'logo-image raster-logo';
+                  logoElement.innerHTML = '<img src="' + finalLogoUrl + '" alt="Logo" class="' + logoClass + '"> ' + siteTitle;
               }
               // 更新页面title
               document.title = siteTitle + ' - 服务器监控面板';
@@ -6346,7 +6640,7 @@ export default {
               
               // 如果背景图开关是开启的，重新应用背景图（这样用户能立即看到自定义背景图的效果）
               if (getBackgroundEnabled()) {
-                  await updateBackgroundImage();
+                  await updateBackgroundImageWithSettings(settings);
               }
           }
           
@@ -7667,6 +7961,10 @@ export default {
 // 登录页面HTML
 function getLoginHTML(settings = {}) {
   const siteTitle = (settings.siteTitle && settings.siteTitle.trim() !== '') ? settings.siteTitle : 'VPS监控系统';
+  // 获取自定义Logo URL，如果没有则使用默认值
+  const logoUrl = (settings.customLogoUrl && settings.customLogoUrl.trim() !== '') ? settings.customLogoUrl : LOGO_IMAGE_URL;
+  // 根据Logo格式确定CSS类
+  const logoClass = logoUrl.toLowerCase().includes('.svg') || logoUrl.toLowerCase().includes('format=svg') ? 'logo-image svg-logo' : 'logo-image raster-logo';
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -7675,7 +7973,7 @@ function getLoginHTML(settings = {}) {
 
     <title>登录 - ${siteTitle}</title>
     <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/img/logo.svg">
+    <link rel="icon" type="image/svg+xml" href="https://cdn.jsdelivr.net/gh/kamanfaiz/CF-Server-AutoCheck@main/images/logo.svg">
     <link rel="stylesheet" href="${ICONFONT_CSS_URL}">
     <style>
         ${getColorVariables()}
@@ -7695,6 +7993,24 @@ function getLoginHTML(settings = {}) {
             justify-content: center;
             transition: background 0.3s ease;
             position: relative;
+            /* 移动端优化 */
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        /* 移动端背景图优化 */
+        @media (max-width: 768px) {
+            body {
+                min-height: 100vh;
+            }
+            
+            #login-fixed-bg-container {
+                position: fixed !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                /* 移动端特殊处理：确保背景图固定为视口大小 */
+                min-height: 100vh;
+                background-attachment: scroll !important;
+            }
         }
         
 
@@ -7730,8 +8046,17 @@ function getLoginHTML(settings = {}) {
             height: 32px;
             margin-right: 8px;
             display: inline-block;
+            transition: filter 0.3s ease, opacity 0.3s ease;
+        }
+        
+        /* SVG Logo - 使用滤镜适配主题 */
+        .login-header h1 .logo-image.svg-logo {
             filter: brightness(0) saturate(100%) invert(var(--logo-invert)) sepia(100%) saturate(var(--logo-saturate)) hue-rotate(var(--logo-hue)) brightness(var(--logo-brightness)) contrast(var(--logo-contrast));
-            transition: filter 0.3s ease;
+        }
+        
+        /* PNG/JPG/WebP Logo - 保持原始颜色 */
+        .login-header h1 .logo-image.raster-logo {
+            filter: none;
         }
 
         .login-header p {
@@ -8023,7 +8348,7 @@ function getLoginHTML(settings = {}) {
 
     <div class="login-container">
         <div class="login-header">
-            <h1><img src="" alt="Logo" class="logo-image" id="loginLogoImage"> ${siteTitle}</h1>
+            <h1><img src="${logoUrl}" alt="Logo" class="${logoClass}" id="loginLogoImage"> ${siteTitle}</h1>
             <p>请输入密码以访问控制面板</p>
         </div>
 
@@ -8264,20 +8589,42 @@ function getLoginHTML(settings = {}) {
                     document.body.appendChild(bgContainer);
                 }
                 
-                // 设置固定背景容器样式
-                bgContainer.style.cssText = \`
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100vw;
-                    height: 100vh;
-                    background-image: url('\${finalBgUrl}');
-                    background-size: cover;
-                    background-position: center;
-                    background-repeat: no-repeat;
-                    z-index: -1;
-                    pointer-events: none;
-                \`;
+                // 设置固定背景容器样式 - 移动端优化
+                const isMobile = window.innerWidth <= 768;
+                
+                if (isMobile) {
+                    // 移动端：使用固定视口尺寸，不受页面内容影响
+                    bgContainer.style.cssText = \`
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100vw;
+                        height: 100vh;
+                        background-image: url('\${finalBgUrl}');
+                        background-size: cover;
+                        background-position: center;
+                        background-repeat: no-repeat;
+                        z-index: -1;
+                        pointer-events: none;
+                        /* 移动端特殊处理：避免地址栏影响 */
+                        min-height: 100vh;
+                    \`;
+                } else {
+                    // 桌面端：标准fixed布局
+                    bgContainer.style.cssText = \`
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100vw;
+                        height: 100vh;
+                        background-image: url('\${finalBgUrl}');
+                        background-size: cover;
+                        background-position: center;
+                        background-repeat: no-repeat;
+                        z-index: -1;
+                        pointer-events: none;
+                    \`;
+                }
                 
                 // 创建深色模式覆盖层样式
                 let overlayStyle = document.getElementById('login-bg-overlay-style');
@@ -8439,7 +8786,6 @@ function getLoginHTML(settings = {}) {
         document.addEventListener('DOMContentLoaded', async function() {
             initTheme();
             await initLoginBackground(); // 初始化登录页面背景图
-            await initLoginLogo(); // 初始化登录页面Logo
             
             // 监听窗口大小变化（添加防抖功能）
             let loginResizeTimeout;
@@ -8702,22 +9048,132 @@ function hasExternalAuthConfig(env) {
     };
 }
 
+// 检查外置配置状态并存储到KV（用于检测配置变化）
+async function checkAndStoreExternalConfigState(env) {
+    try {
+        const externalTelegramConfig = hasExternalTelegramConfig(env);
+        const externalAuthConfig = hasExternalAuthConfig(env);
+        
+        const currentState = {
+            telegram: {
+                hasExternal: externalTelegramConfig.hasExternal,
+                source: externalTelegramConfig.source
+            },
+            auth: {
+                hasExternal: externalAuthConfig.hasExternal,
+                source: externalAuthConfig.source
+            },
+            lastCheck: Date.now()
+        };
+        
+        // 获取之前保存的外置配置状态
+        const lastStateData = await env.SERVER_MONITOR?.get('external_config_state');
+        const lastState = lastStateData ? JSON.parse(lastStateData) : null;
+        
+        // 保存当前状态
+        await env.SERVER_MONITOR?.put('external_config_state', JSON.stringify(currentState));
+        
+        // 检查是否有配置从有变为无（表示外置配置被删除）
+        let needsCleanup = false;
+        
+        if (lastState) {
+            // Telegram配置从有变为无
+            if (lastState.telegram?.hasExternal && !currentState.telegram.hasExternal) {
+                needsCleanup = true;
+            }
+            
+            // 认证配置从有变为无
+            if (lastState.auth?.hasExternal && !currentState.auth.hasExternal) {
+                needsCleanup = true;
+            }
+        }
+        
+        return needsCleanup;
+    } catch (error) {
+        console.error('Error checking external config state:', error);
+        return false;
+    }
+}
+
+// 同步配置状态：当外置配置不存在时，自动清理KV中相应的设置
+async function syncConfigurationState(env, forceCleanup = false) {
+    try {
+        const webSettings = await getSettingsData(env);
+        const externalTelegramConfig = hasExternalTelegramConfig(env);
+        const externalAuthConfig = hasExternalAuthConfig(env);
+        
+        let needsUpdate = false;
+        const updatedSettings = { ...webSettings };
+        
+        // 确保设置对象结构完整
+        if (!updatedSettings.telegram) {
+            updatedSettings.telegram = { enabled: false, botToken: '', chatId: '' };
+        }
+        if (!updatedSettings.auth) {
+            updatedSettings.auth = { enabled: false, password: '' };
+        }
+        
+        // 只有在强制清理模式下才执行清理（表示外置配置刚被删除）
+        if (forceCleanup) {
+            // 获取上次的外置配置状态来决定清理哪些配置
+            const lastStateData = await env.SERVER_MONITOR?.get('external_config_state');
+            const lastState = lastStateData ? JSON.parse(lastStateData) : null;
+            
+            if (lastState) {
+                // 只清理原本由外置配置提供的设置
+                
+                // Telegram配置：如果之前有外置配置，现在没有了，则清理
+                if (lastState.telegram?.hasExternal && !externalTelegramConfig.hasExternal) {
+
+                    updatedSettings.telegram = {
+                        enabled: false,
+                        botToken: '',
+                        chatId: ''
+                    };
+                    needsUpdate = true;
+                }
+                
+                // 认证配置：如果之前有外置配置，现在没有了，则清理
+                if (lastState.auth?.hasExternal && !externalAuthConfig.hasExternal) {
+                    updatedSettings.auth = {
+                        enabled: false,
+                        password: ''
+                    };
+                    needsUpdate = true;
+                }
+            }
+            
+            // 如果需要更新，写回KV存储
+            if (needsUpdate) {
+                await env.SERVER_MONITOR?.put('settings', JSON.stringify(updatedSettings));
+            }
+        }
+        
+        return updatedSettings;
+    } catch (error) {
+        console.error('Error syncing configuration state:', error);
+        // 如果同步失败，返回当前设置
+        return await getSettingsData(env);
+    }
+}
+
 // 获取完整配置（合并所有来源）
-async function getFullConfig(env) {
-    const webSettings = await getSettingsData(env);
+async function getFullConfig(env, forceSync = false) {
+    // 获取配置状态，只在明确需要时强制清理
+    const webSettings = await syncConfigurationState(env, forceSync);
     const externalTelegramConfig = hasExternalTelegramConfig(env);
     const externalAuthConfig = hasExternalAuthConfig(env);
     
     return {
         telegram: {
-            enabled: webSettings.telegram?.enabled || externalTelegramConfig.hasExternal,
+            enabled: externalTelegramConfig.hasExternal || (webSettings.telegram?.enabled || false),
             botToken: await getConfigValue(env, 'telegram', 'botToken', webSettings),
             chatId: await getConfigValue(env, 'telegram', 'chatId', webSettings),
             // 添加配置来源信息
             configSource: externalTelegramConfig
         },
         auth: {
-            enabled: webSettings.auth?.enabled || externalAuthConfig.hasExternal,
+            enabled: externalAuthConfig.hasExternal || (webSettings.auth?.enabled || false),
             password: await getConfigValue(env, 'auth', 'password', webSettings),
             // 添加配置来源信息
             configSource: externalAuthConfig
@@ -8725,7 +9181,10 @@ async function getFullConfig(env) {
         globalNotifyDays: webSettings.globalNotifyDays || 14,
         siteTitle: (webSettings.siteTitle && webSettings.siteTitle.trim() !== '') ? webSettings.siteTitle : '服务器到期监控',
         welcomeMessage: (webSettings.welcomeMessage && webSettings.welcomeMessage.trim() !== '') ? webSettings.welcomeMessage : 'Hello!',
-        nezhaMonitorUrl: webSettings.nezhaMonitorUrl || ''
+        nezhaMonitorUrl: webSettings.nezhaMonitorUrl || '',
+        customLogoUrl: webSettings.customLogoUrl || '',
+        customDesktopBackgroundUrl: webSettings.customDesktopBackgroundUrl || '',
+        customMobileBackgroundUrl: webSettings.customMobileBackgroundUrl || ''
     };
 }
 
