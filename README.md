@@ -1,5 +1,10 @@
 # 🖥️CF-Server-Autocheck
 
+<details>
+    <summary>修复日志</summary>
+    2025-08-17 修复dark主题模式下，服务器续期的日期文本框背景显示问题
+</details>
+
 ## 🚨本项目主要是参考了`NEZHA V1`面板并通过和Ai沟通创作而成，有能力的小伙伴可自行进行完善或魔改🚨
 
 ### 项目起源：
