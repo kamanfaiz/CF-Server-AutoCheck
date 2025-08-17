@@ -2102,6 +2102,34 @@ export default {
               box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.2);
           }
           
+          /* 只读日期输入框样式 */
+          .form-group input.readonly-date-input {
+              cursor: not-allowed;
+              opacity: 0.8;
+          }
+          
+          /* 浅色模式下的只读日期输入框背景 */
+          .form-group input.readonly-date-input {
+              background-color: #f8f9fa;
+          }
+          
+          .form-group input.readonly-date-input.renewal-success {
+              background-color: #e8f5e8;
+          }
+          
+          /* 深色模式下的只读日期输入框样式 */
+          [data-theme="dark"] .form-group input.readonly-date-input {
+              background-color: var(--bg-secondary);
+              color: var(--text-primary);
+              border-color: var(--border-color);
+          }
+          
+          [data-theme="dark"] .form-group input.readonly-date-input.renewal-success {
+              background-color: rgba(64, 217, 98, 0.1);
+              border-color: var(--success-color);
+              color: var(--text-primary);
+          }
+          
           /* 修复苹果设备日期输入框宽度问题 */
           @supports (-webkit-appearance: none) {
               .form-group input[type="date"] {
@@ -3883,12 +3911,12 @@ export default {
                   
                   <div class="form-group">
                       <label for="currentExpireDate">当前到期日期</label>
-                      <input type="date" id="currentExpireDate" readonly style="background: #f8f9fa; cursor: not-allowed;">
+                      <input type="date" id="currentExpireDate" class="readonly-date-input" readonly>
                   </div>
                   
                   <div class="form-group">
                       <label for="newExpireDate">续期后到期日期</label>
-                      <input type="date" id="newExpireDate" readonly style="background: #e8f5e8; cursor: not-allowed;">
+                      <input type="date" id="newExpireDate" class="readonly-date-input renewal-success" readonly>
                   </div>
                   
                   <div class="form-actions">
