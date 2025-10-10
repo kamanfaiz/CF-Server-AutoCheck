@@ -2264,6 +2264,49 @@ export default {
               font-size: 16px;
           }
           
+          /* 续期选项网格布局 */
+          .renewal-options-grid {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 12px 16px;
+              margin-top: 8px;
+          }
+          
+          .renewal-option-item {
+              display: flex;
+              align-items: center;
+              cursor: pointer;
+              padding: 8px 0;
+          }
+          
+          .renewal-option-item input[type="radio"] {
+              margin-right: 8px;
+              flex-shrink: 0;
+          }
+          
+          .renewal-option-item span {
+              user-select: none;
+              font-size: 14px;
+          }
+          
+          /* 续期起始日期标签样式 */
+          .renewal-start-label {
+              display: block;
+              margin-bottom: 4px;
+          }
+          
+          /* 桌面端：单行显示 */
+          @media (min-width: 768px) {
+              .renewal-options-grid {
+                  grid-template-columns: repeat(4, 1fr);
+                  gap: 8px;
+              }
+              
+              .renewal-option-item {
+                  padding: 0;
+              }
+          }
+          
           .renewal-section .form-group {
               margin-bottom: 0;
           }
@@ -3987,22 +4030,22 @@ export default {
                           <span>起始日期计算方式</span>
                       </div>
                       <div class="form-group">
-                          <label for="renewalStartType">续期起始日期</label>
-                          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 120px;">
-                                  <input type="radio" name="renewalStartType" id="renewalFromNow" value="now" style="margin-right: 6px;">
+                          <label for="renewalStartType" class="renewal-start-label">续期起始日期</label>
+                          <div class="renewal-options-grid">
+                              <label class="renewal-option-item">
+                                  <input type="radio" name="renewalStartType" id="renewalFromNow" value="now">
                                   <span>从当前日期开始</span>
                               </label>
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 120px;">
-                                  <input type="radio" name="renewalStartType" id="renewalFromNowAccumulate" value="nowAccumulate" checked style="margin-right: 6px;">
+                              <label class="renewal-option-item">
+                                  <input type="radio" name="renewalStartType" id="renewalFromNowAccumulate" value="nowAccumulate" checked>
                                   <span>从当前日期累计</span>
                               </label>
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 120px;">
-                                  <input type="radio" name="renewalStartType" id="renewalFromExpire" value="expire" style="margin-right: 6px;">
+                              <label class="renewal-option-item">
+                                  <input type="radio" name="renewalStartType" id="renewalFromExpire" value="expire">
                                   <span>从到期日期开始</span>
                               </label>
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 80px;">
-                                  <input type="radio" name="renewalStartType" id="renewalCustom" value="custom" style="margin-right: 6px;">
+                              <label class="renewal-option-item">
+                                  <input type="radio" name="renewalStartType" id="renewalCustom" value="custom">
                                   <span>自定义</span>
                               </label>
                           </div>
