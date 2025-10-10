@@ -2131,6 +2131,19 @@ export default {
               background-color: #e8f5e8;
           }
           
+          /* 可编辑的续期日期输入框样式 */
+          .form-group input.renewal-date-input:not([readonly]) {
+              background-color: var(--bg-primary);
+              border-color: var(--primary-color);
+              cursor: text;
+              opacity: 1;
+          }
+          
+          .form-group input.renewal-date-input:not([readonly]):focus {
+              border-color: var(--primary-color);
+              box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+          }
+          
           /* 深色模式下的只读日期输入框样式 */
           [data-theme="dark"] .form-group input.readonly-date-input {
               background-color: var(--bg-secondary);
@@ -3976,17 +3989,21 @@ export default {
                       <div class="form-group">
                           <label for="renewalStartType">续期起始日期</label>
                           <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 130px;">
+                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 120px;">
                                   <input type="radio" name="renewalStartType" id="renewalFromNow" value="now" style="margin-right: 6px;">
                                   <span>从当前日期开始</span>
                               </label>
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 130px;">
+                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 120px;">
                                   <input type="radio" name="renewalStartType" id="renewalFromNowAccumulate" value="nowAccumulate" checked style="margin-right: 6px;">
                                   <span>从当前日期累计</span>
                               </label>
-                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 130px;">
+                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 120px;">
                                   <input type="radio" name="renewalStartType" id="renewalFromExpire" value="expire" style="margin-right: 6px;">
                                   <span>从到期日期开始</span>
+                              </label>
+                              <label style="display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 80px;">
+                                  <input type="radio" name="renewalStartType" id="renewalCustom" value="custom" style="margin-right: 6px;">
+                                  <span>自定义</span>
                               </label>
                           </div>
                           <div style="font-size: 12px; color: #95a5a6; margin-top: 4px;">
@@ -3999,16 +4016,16 @@ export default {
                   <div class="renewal-section">
                       <div class="renewal-section-title">
                           <i class="iconfont icon-calendar-days"></i>
-                          <span>到期日期预览</span>
+                          <span id="renewalDateSectionTitle">到期日期预览</span>
                       </div>
                       <div class="form-group">
                           <label for="currentExpireDate" id="currentExpireDateLabel">当前到期日期</label>
-                          <input type="date" id="currentExpireDate" class="readonly-date-input" readonly>
+                          <input type="date" id="currentExpireDate" class="renewal-date-input" readonly>
                       </div>
                       
                       <div class="form-group">
                           <label for="newExpireDate">续期后到期日期</label>
-                          <input type="date" id="newExpireDate" class="readonly-date-input renewal-success" readonly>
+                          <input type="date" id="newExpireDate" class="renewal-date-input renewal-success" readonly>
                       </div>
                   </div>
                   
@@ -6336,6 +6353,7 @@ export default {
                       registerDate: document.getElementById('registerDate').value,
                       price: fullPrice,
                       renewalPeriod: renewalPeriod,
+                      originalRenewalPeriod: renewalPeriod, // 保存原始续期周期
                       renewalLink: document.getElementById('renewalLink').value,
                       tags: document.getElementById('serverTags').value,
                       tagColor: document.getElementById('tagColor').value,
@@ -6601,8 +6619,20 @@ export default {
               
               
               // 续期表单事件监听器
-              document.getElementById('renewalNumber').addEventListener('input', calculateNewExpireDate);
-              document.getElementById('renewalUnit').addEventListener('change', calculateNewExpireDate);
+              document.getElementById('renewalNumber').addEventListener('input', function() {
+                  if (document.getElementById('renewalCustom').checked) {
+                      calculateCustomExpireDate();
+                  } else {
+                      calculateNewExpireDate();
+                  }
+              });
+              document.getElementById('renewalUnit').addEventListener('change', function() {
+                  if (document.getElementById('renewalCustom').checked) {
+                      calculateCustomExpireDate();
+                  } else {
+                      calculateNewExpireDate();
+                  }
+              });
               document.getElementById('renewalFromExpire').addEventListener('change', function() {
                   updateRenewalStartHint();
                   calculateNewExpireDate();
@@ -6614,6 +6644,25 @@ export default {
               document.getElementById('renewalFromNowAccumulate').addEventListener('change', function() {
                   updateRenewalStartHint();
                   calculateNewExpireDate();
+              });
+              document.getElementById('renewalCustom').addEventListener('change', function() {
+                  updateRenewalStartHint();
+                  // 切换到自定义模式时，计算一次初始的到期日期
+                  calculateCustomExpireDate();
+              });
+              
+              // 在自定义模式下，监听当前到期日期的变化
+              document.getElementById('currentExpireDate').addEventListener('change', function() {
+                  if (document.getElementById('renewalCustom').checked) {
+                      calculateCustomExpireDate();
+                  }
+              });
+              
+              // 在自定义模式下，监听续期后到期日期的变化（反向计算续期周期）
+              document.getElementById('newExpireDate').addEventListener('change', function() {
+                  if (document.getElementById('renewalCustom').checked) {
+                      calculateRenewalPeriodFromDates();
+                  }
               });
               
               document.getElementById('renewalForm').addEventListener('submit', async function(e) {
@@ -6670,7 +6719,7 @@ export default {
                   // 组装续期周期信息
                   const renewalNum = document.getElementById('editRenewalPeriodNum').value;
                   const renewalUnit = document.getElementById('editRenewalPeriodUnit').value;
-                  const renewalPeriod = renewalNum ? \`\${renewalNum}\${renewalUnit}\` : '';
+                  let renewalPeriod = renewalNum ? \`\${renewalNum}\${renewalUnit}\` : '';
                   
                   // 获取服务商名称
                   const providerSelect = document.getElementById('editServerProvider');
@@ -6692,10 +6741,21 @@ export default {
                       finalProvider = providerSelect.value;
                   }
                   
-                  // 获取上次续期日期和续期偏好（保持原有的值）
+                  // 获取上次续期日期和续期偏好
                   const currentServer = servers.find(s => s.id === currentEditServerId);
-                  const lastRenewalDate = currentServer ? currentServer.lastRenewalDate : null;
-                  const lastRenewalType = currentServer ? currentServer.lastRenewalType : null;
+                  let lastRenewalDate = currentServer ? currentServer.lastRenewalDate : null;
+                  let lastRenewalType = currentServer ? currentServer.lastRenewalType : null;
+                  let originalRenewalPeriod = currentServer ? currentServer.originalRenewalPeriod : null;
+                  
+                  // 如果用户标记了清除，则清除续期记录和偏好，并恢复原始续期周期
+                  if (isClearRenewalMarked) {
+                      lastRenewalDate = null;
+                      lastRenewalType = null;
+                      // 恢复原始续期周期（如果有的话）
+                      if (originalRenewalPeriod) {
+                          renewalPeriod = originalRenewalPeriod;
+                      }
+                  }
                   
                   const formData = {
                       name: document.getElementById('editServerName').value.trim(),
@@ -6706,12 +6766,13 @@ export default {
                       registerDate: document.getElementById('editRegisterDate').value,
                       expireDate: document.getElementById('editExpireDate').value,
                       renewalPeriod: renewalPeriod,
+                      originalRenewalPeriod: originalRenewalPeriod, // 保留原始续期周期（不覆盖）
                       price: fullPrice,
                       renewalLink: document.getElementById('editRenewalLink').value.trim(),
                       notifyDays: parseInt(document.getElementById('editNotifyDays').value) || 14,
                       categoryId: document.getElementById('editServerCategory').value || '',
-                      lastRenewalDate: lastRenewalDate, // 保持原有的续期记录
-                      lastRenewalType: lastRenewalType // 保持原有的续期偏好
+                      lastRenewalDate: lastRenewalDate, // 如果清除了则为null
+                      lastRenewalType: lastRenewalType // 如果清除了则为null
                   };
                   
                   if (!formData.name) {
@@ -6738,6 +6799,10 @@ export default {
                       });
                       
                       if (response.ok) {
+                          // 重置清除标记
+                          isClearRenewalMarked = false;
+                          originalServerData = null;
+                          
                           showNotification('服务器信息更新成功！', 'success');
                           hideEditServerModal();
                           await loadData();
@@ -7364,30 +7429,58 @@ export default {
           function updateRenewalStartHint() {
               const hintElement = document.getElementById('renewalStartHint');
               const currentExpireDateInput = document.getElementById('currentExpireDate');
+              const newExpireDateInput = document.getElementById('newExpireDate');
               const currentExpireDateLabel = document.getElementById('currentExpireDateLabel');
+              const sectionTitle = document.getElementById('renewalDateSectionTitle');
               
-              if (document.getElementById('renewalFromNow').checked) {
-                  hintElement.textContent = '从今天开始 + 续期周期（忽略原到期日期）';
-                  // 将当前到期日期显示为今天
-                  const today = new Date();
-                  currentExpireDateInput.value = today.toISOString().split('T')[0];
-                  currentExpireDateLabel.textContent = '起始日期（今天）';
-              } else if (document.getElementById('renewalFromNowAccumulate').checked) {
-                  hintElement.textContent = '从今天开始 + 续期周期 + 剩余天数（推荐）';
+              if (document.getElementById('renewalCustom').checked) {
+                  // 自定义模式
+                  hintElement.textContent = '手动编辑到期日期（完全自定义）';
+                  currentExpireDateLabel.textContent = '当前到期日期';
+                  sectionTitle.textContent = '到期日期设置';
+                  
+                  // 解除只读限制
+                  currentExpireDateInput.removeAttribute('readonly');
+                  newExpireDateInput.removeAttribute('readonly');
+                  currentExpireDateInput.classList.remove('readonly-date-input');
+                  newExpireDateInput.classList.remove('readonly-date-input');
+                  
                   // 恢复原始到期日期
                   const server = servers.find(s => s.id === currentRenewalServerId);
                   if (server && server.expireDate) {
                       currentExpireDateInput.value = server.expireDate;
                   }
-                  currentExpireDateLabel.textContent = '当前到期日期';
-              } else if (document.getElementById('renewalFromExpire').checked) {
-                  hintElement.textContent = '从原到期日期 + 续期周期';
-                  // 恢复原始到期日期
-                  const server = servers.find(s => s.id === currentRenewalServerId);
-                  if (server && server.expireDate) {
-                      currentExpireDateInput.value = server.expireDate;
+              } else {
+                  // 其他模式都是只读的
+                  sectionTitle.textContent = '到期日期预览';
+                  currentExpireDateInput.setAttribute('readonly', 'readonly');
+                  newExpireDateInput.setAttribute('readonly', 'readonly');
+                  currentExpireDateInput.classList.add('readonly-date-input');
+                  newExpireDateInput.classList.add('readonly-date-input');
+                  
+                  if (document.getElementById('renewalFromNow').checked) {
+                      hintElement.textContent = '从今天开始 + 续期周期（忽略原到期日期）';
+                      // 将当前到期日期显示为今天
+                      const today = new Date();
+                      currentExpireDateInput.value = today.toISOString().split('T')[0];
+                      currentExpireDateLabel.textContent = '起始日期（今天）';
+                  } else if (document.getElementById('renewalFromNowAccumulate').checked) {
+                      hintElement.textContent = '从今天开始 + 续期周期 + 剩余天数（推荐）';
+                      // 恢复原始到期日期
+                      const server = servers.find(s => s.id === currentRenewalServerId);
+                      if (server && server.expireDate) {
+                          currentExpireDateInput.value = server.expireDate;
+                      }
+                      currentExpireDateLabel.textContent = '当前到期日期';
+                  } else if (document.getElementById('renewalFromExpire').checked) {
+                      hintElement.textContent = '从原到期日期 + 续期周期';
+                      // 恢复原始到期日期
+                      const server = servers.find(s => s.id === currentRenewalServerId);
+                      if (server && server.expireDate) {
+                          currentExpireDateInput.value = server.expireDate;
+                      }
+                      currentExpireDateLabel.textContent = '当前到期日期';
                   }
-                  currentExpireDateLabel.textContent = '当前到期日期';
               }
           }
           
@@ -7410,17 +7503,16 @@ export default {
               document.getElementById('renewalUnit').value = unit;
               
               // 智能选择续期起始日期类型
-              // 如果服务器有保存的续期偏好，使用保存的偏好
-              // 如果没有保存的偏好：
-              //   - 如果从未续过期(没有lastRenewalDate)，默认选择"从到期日期开始"
-              //   - 如果续过期，默认选择"从当前日期累计"
+              // 如果服务器有保存的续期偏好，使用保存的偏好（但排除"自定义"）
+              // 如果上次是"自定义"或从未续过期，默认选择"从到期日期开始"
+              // 如果续过期但没有偏好，默认选择"从当前日期累计"
               let defaultRenewalType = 'nowAccumulate'; // 默认值
               
-              if (server.lastRenewalType) {
-                  // 有保存的偏好，使用保存的偏好
+              if (server.lastRenewalType && server.lastRenewalType !== 'custom') {
+                  // 有保存的偏好且不是"自定义"，使用保存的偏好
                   defaultRenewalType = server.lastRenewalType;
-              } else if (!server.lastRenewalDate) {
-                  // 从未续过期，使用"从到期日期开始"
+              } else if (!server.lastRenewalDate || server.lastRenewalType === 'custom') {
+                  // 从未续过期，或上次是"自定义"，默认选择"从到期日期开始"
                   defaultRenewalType = 'expire';
               }
               
@@ -7428,6 +7520,7 @@ export default {
               document.getElementById('renewalFromNow').checked = (defaultRenewalType === 'now');
               document.getElementById('renewalFromNowAccumulate').checked = (defaultRenewalType === 'nowAccumulate');
               document.getElementById('renewalFromExpire').checked = (defaultRenewalType === 'expire');
+              document.getElementById('renewalCustom').checked = (defaultRenewalType === 'custom');
               
               // 更新提示文字和当前到期日期显示
               updateRenewalStartHint();
@@ -7451,6 +7544,112 @@ export default {
               currentRenewalServerId = '';
           }
           
+          // 防止循环计算的标志
+          let isCalculating = false;
+          
+          // 计算自定义模式下的到期日期
+          function calculateCustomExpireDate() {
+              if (isCalculating) return; // 防止循环
+              
+              const renewalNumber = parseInt(document.getElementById('renewalNumber').value);
+              const renewalUnit = document.getElementById('renewalUnit').value;
+              const currentExpireDate = new Date(document.getElementById('currentExpireDate').value);
+              
+              if (!renewalNumber || !renewalUnit || !currentExpireDate || renewalNumber <= 0) {
+                  document.getElementById('newExpireDate').value = '';
+                  return;
+              }
+              
+              isCalculating = true;
+              
+              // 从用户设置的当前到期日期开始计算
+              let newExpireDate = new Date(currentExpireDate);
+              
+              // 根据续期周期和单位计算新日期
+              switch (renewalUnit) {
+                  case '天':
+                      newExpireDate.setDate(newExpireDate.getDate() + renewalNumber);
+                      break;
+                  case '月':
+                      newExpireDate.setMonth(newExpireDate.getMonth() + renewalNumber);
+                      break;
+                  case '年':
+                      newExpireDate.setFullYear(newExpireDate.getFullYear() + renewalNumber);
+                      break;
+              }
+              
+              // 格式化日期为 YYYY-MM-DD
+              const formattedDate = newExpireDate.toISOString().split('T')[0];
+              document.getElementById('newExpireDate').value = formattedDate;
+              
+              isCalculating = false;
+          }
+          
+          // 根据两个日期反向计算续期周期
+          function calculateRenewalPeriodFromDates() {
+              if (isCalculating) return; // 防止循环
+              
+              const currentExpireDate = new Date(document.getElementById('currentExpireDate').value);
+              const newExpireDate = new Date(document.getElementById('newExpireDate').value);
+              
+              if (!currentExpireDate || !newExpireDate) {
+                  return;
+              }
+              
+              // 如果新日期早于或等于当前日期，不计算
+              if (newExpireDate <= currentExpireDate) {
+                  return;
+              }
+              
+              isCalculating = true;
+              
+              // 计算两个日期之间的天数差
+              const diffTime = newExpireDate - currentExpireDate;
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              
+              // 智能判断应该使用什么单位
+              let renewalNumber, renewalUnit;
+              
+              // 计算年数差
+              const yearsDiff = newExpireDate.getFullYear() - currentExpireDate.getFullYear();
+              const monthsDiff = newExpireDate.getMonth() - currentExpireDate.getMonth();
+              const daysDiff = newExpireDate.getDate() - currentExpireDate.getDate();
+              
+              // 如果是整年数（月和日都相同或只差一天内的误差）
+              if (yearsDiff > 0 && Math.abs(monthsDiff) <= 0 && Math.abs(daysDiff) <= 1) {
+                  renewalNumber = yearsDiff;
+                  renewalUnit = '年';
+              }
+              // 如果是整月数（年内的月份差，且日期相同或只差一天内的误差）
+              else if (yearsDiff === 0 && monthsDiff > 0 && Math.abs(daysDiff) <= 1) {
+                  renewalNumber = monthsDiff;
+                  renewalUnit = '月';
+              }
+              // 如果跨年但月数可以整除（比如13个月 = 1年1个月，取月数）
+              else if (yearsDiff > 0 || monthsDiff !== 0) {
+                  const totalMonths = yearsDiff * 12 + monthsDiff;
+                  if (totalMonths > 0 && Math.abs(daysDiff) <= 1) {
+                      renewalNumber = totalMonths;
+                      renewalUnit = '月';
+                  } else {
+                      // 无法精确匹配月份，使用天数
+                      renewalNumber = diffDays;
+                      renewalUnit = '天';
+                  }
+              }
+              // 其他情况使用天数
+              else {
+                  renewalNumber = diffDays;
+                  renewalUnit = '天';
+              }
+              
+              // 更新续期周期输入框
+              document.getElementById('renewalNumber').value = renewalNumber;
+              document.getElementById('renewalUnit').value = renewalUnit;
+              
+              isCalculating = false;
+          }
+          
           // 计算新的到期日期
           function calculateNewExpireDate() {
               const renewalNumber = parseInt(document.getElementById('renewalNumber').value);
@@ -7461,6 +7660,12 @@ export default {
               const startFromExpire = document.getElementById('renewalFromExpire').checked;
               const startFromNow = document.getElementById('renewalFromNow').checked;
               const startFromNowAccumulate = document.getElementById('renewalFromNowAccumulate').checked;
+              const isCustom = document.getElementById('renewalCustom').checked;
+              
+              // 如果是自定义模式，不自动计算
+              if (isCustom) {
+                  return;
+              }
               
               if (!renewalNumber || !renewalUnit || !currentExpireDate || renewalNumber <= 0) {
                   document.getElementById('newExpireDate').value = '';
@@ -7550,16 +7755,19 @@ export default {
                       renewalType = 'nowAccumulate';
                   } else if (document.getElementById('renewalFromExpire').checked) {
                       renewalType = 'expire';
+                  } else if (document.getElementById('renewalCustom').checked) {
+                      renewalType = 'custom';
                   }
                   
-                  // 更新服务器信息
-                  const updatedServer = {
-                      ...server,
-                      expireDate: newExpireDate,
-                      renewalPeriod: renewalPeriod,
-                      lastRenewalDate: new Date().toISOString().split('T')[0], // 记录续期日期
-                      lastRenewalType: renewalType // 记录用户选择的续期类型
-                  };
+                // 更新服务器信息
+                const updatedServer = {
+                    ...server,
+                    expireDate: newExpireDate,
+                    renewalPeriod: renewalPeriod, // 更新当前续期周期（自定义模式时会改变）
+                    lastRenewalDate: new Date().toISOString().split('T')[0], // 记录续期日期
+                    lastRenewalType: renewalType, // 记录用户选择的续期类型
+                    // originalRenewalPeriod 保持不变（创建时的原始周期）
+                };
                   
                   const response = await fetch(\`/api/servers/\${serverId}\`, {
                       method: 'PUT',
@@ -7592,6 +7800,12 @@ export default {
               }
               
               currentEditServerId = serverId;
+              
+              // 保存原始服务器数据（用于清除操作恢复）
+              originalServerData = JSON.parse(JSON.stringify(server));
+              
+              // 重置清除标记
+              isClearRenewalMarked = false;
               
               // 开始初始化表单，禁用实时检测
               isEditFormInitializing = true;
@@ -7692,6 +7906,10 @@ export default {
           // 隐藏编辑服务器模态框
           function hideEditServerModal() {
               document.getElementById('editServerModal').classList.remove('show');
+              
+              // 重置清除标记和原始数据
+              isClearRenewalMarked = false;
+              originalServerData = null;
               
               // 手动重置所有字段（不使用form.reset()以避免影响数据填充）
               document.getElementById('editServerName').value = '';
@@ -7848,65 +8066,11 @@ export default {
               document.getElementById('editExpireDate').value = formattedDate;
           }
           
-          // 清除上次续期日期的处理函数
-          async function handleClearLastRenewal() {
-              try {
-                  const server = servers.find(s => s.id === currentEditServerId);
-                  if (!server) {
-                      throw new Error('服务器未找到');
-                  }
-                  
-                  // 清除续期记录和续期偏好，并重新计算到期日期
-                  const updatedServer = {
-                      ...server,
-                      lastRenewalDate: null,
-                      lastRenewalType: null // 同时清除续期偏好
-                  };
-                  
-                  // 如果有注册日期和续期周期，重新计算到期日期
-                  if (server.registerDate && server.renewalPeriod) {
-                      const registerDate = new Date(server.registerDate);
-                      const { number, unit } = parseRenewalPeriod(server.renewalPeriod);
-                      
-                      let newExpireDate = new Date(registerDate);
-                      switch (unit) {
-                          case '天':
-                              newExpireDate.setDate(newExpireDate.getDate() + number);
-                              break;
-                          case '月':
-                              newExpireDate.setMonth(newExpireDate.getMonth() + number);
-                              break;
-                          case '年':
-                              newExpireDate.setFullYear(newExpireDate.getFullYear() + number);
-                              break;
-                      }
-                      
-                      updatedServer.expireDate = newExpireDate.toISOString().split('T')[0];
-                  }
-                  
-                  const response = await fetch('/api/servers/' + currentEditServerId, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(updatedServer)
-                  });
-                  
-                  if (response.ok) {
-                      await loadData();
-                      showNotification('已清除续期记录和偏好设置，到期日期已重新计算', 'success');
-                      
-                      // 更新当前编辑界面
-                      document.getElementById('editLastRenewalGroup').style.display = 'none';
-                      document.getElementById('editLastRenewalDate').value = '';
-                      document.getElementById('editExpireDate').value = updatedServer.expireDate;
-                  } else {
-                      throw new Error('清除续期记录失败');
-                  }
-              } catch (error) {
-                  showNotification('错误：' + error.message, 'error');
-              }
-          }
+          // 标记是否已清除续期记录（延迟执行，只有保存时才真正清除）
+          let isClearRenewalMarked = false;
+          let originalServerData = null; // 保存原始服务器数据
           
-          // 清除上次续期日期
+          // 清除上次续期日期（仅在界面上标记，不立即保存）
           async function clearLastRenewalDate() {
               if (!currentEditServerId) {
                   showNotification('未找到服务器信息', 'error');
@@ -7915,12 +8079,54 @@ export default {
               
               const result = await showConfirmDialog(
                   '确认清除续期记录',
-                  '确定要清除续期记录吗？这将清除上次续期日期和续期偏好设置，并根据注册日期+续期周期重新计算到期日期。下次续期时将使用默认选项。',
+                  '确定要清除续期记录吗？这将清除上次续期日期和续期偏好设置，并根据注册日期+续期周期重新计算到期日期。需要点击"保存修改"才会生效。',
                   '<i class="iconfont icon-triangle-exclamation"></i>'
               );
               
               if (result) {
-                  await handleClearLastRenewal();
+                  // 标记为已清除，但不立即保存
+                  isClearRenewalMarked = true;
+                  
+                  const server = servers.find(s => s.id === currentEditServerId);
+                  if (!server) return;
+                  
+                  // 隐藏上次续期日期显示
+                  document.getElementById('editLastRenewalGroup').style.display = 'none';
+                  document.getElementById('editLastRenewalDate').value = '';
+                  
+                  // 恢复到最初的设置：使用原始注册日期和原始续期周期
+                  if (originalServerData && originalServerData.registerDate) {
+                      // 使用原始续期周期（优先使用originalRenewalPeriod，否则使用renewalPeriod）
+                      const originalPeriod = originalServerData.originalRenewalPeriod || originalServerData.renewalPeriod;
+                      
+                      if (originalPeriod) {
+                          const registerDate = new Date(originalServerData.registerDate);
+                          const { number, unit } = parseRenewalPeriod(originalPeriod);
+                          
+                          let newExpireDate = new Date(registerDate);
+                          switch (unit) {
+                              case '天':
+                                  newExpireDate.setDate(newExpireDate.getDate() + number);
+                                  break;
+                              case '月':
+                                  newExpireDate.setMonth(newExpireDate.getMonth() + number);
+                                  break;
+                              case '年':
+                                  newExpireDate.setFullYear(newExpireDate.getFullYear() + number);
+                                  break;
+                          }
+                          
+                          // 更新界面显示
+                          document.getElementById('editRegisterDate').value = originalServerData.registerDate;
+                          document.getElementById('editExpireDate').value = newExpireDate.toISOString().split('T')[0];
+                          
+                          // 恢复原始续期周期显示
+                          document.getElementById('editRenewalPeriodNum').value = number;
+                          document.getElementById('editRenewalPeriodUnit').value = unit;
+                      }
+                  }
+                  
+                  showNotification('已标记清除，点击"保存修改"后生效', 'info');
               }
           }
           
