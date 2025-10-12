@@ -4037,11 +4037,7 @@ export default {
                                   <span>从当前日期开始</span>
                               </label>
                               <label class="renewal-option-item">
-                                  <input type="radio" name="renewalStartType" id="renewalFromNowAccumulate" value="nowAccumulate" checked>
-                                  <span>从当前日期累计</span>
-                              </label>
-                              <label class="renewal-option-item">
-                                  <input type="radio" name="renewalStartType" id="renewalFromExpire" value="expire">
+                                  <input type="radio" name="renewalStartType" id="renewalFromExpire" value="expire" checked>
                                   <span>从到期日期开始</span>
                               </label>
                               <label class="renewal-option-item">
@@ -4050,7 +4046,7 @@ export default {
                               </label>
                           </div>
                           <div style="font-size: 12px; color: #95a5a6; margin-top: 4px;">
-                              <span id="renewalStartHint">从今天开始 + 续期周期 + 剩余天数（推荐）</span>
+                              <span id="renewalStartHint">从原到期日期 + 续期周期（保留剩余天数）</span>
                           </div>
                       </div>
                   </div>
@@ -6684,10 +6680,6 @@ export default {
                   updateRenewalStartHint();
                   calculateNewExpireDate();
               });
-              document.getElementById('renewalFromNowAccumulate').addEventListener('change', function() {
-                  updateRenewalStartHint();
-                  calculateNewExpireDate();
-              });
               document.getElementById('renewalCustom').addEventListener('change', function() {
                   updateRenewalStartHint();
                   // 切换到自定义模式时，计算一次初始的到期日期
@@ -7502,21 +7494,16 @@ export default {
                   newExpireDateInput.classList.add('readonly-date-input');
                   
                   if (document.getElementById('renewalFromNow').checked) {
-                      hintElement.textContent = '从今天开始 + 续期周期（忽略原到期日期）';
-                      // 将当前到期日期显示为今天
+                      hintElement.textContent = '从今天往后加上续期周期（忽略原到期日期）';
+                      // 将当前到期日期显示为今天（使用本地时间）
                       const today = new Date();
-                      currentExpireDateInput.value = today.toISOString().split('T')[0];
+                      const year = today.getFullYear();
+                      const month = String(today.getMonth() + 1).padStart(2, '0');
+                      const day = String(today.getDate()).padStart(2, '0');
+                      currentExpireDateInput.value = year + '-' + month + '-' + day;
                       currentExpireDateLabel.textContent = '起始日期（今天）';
-                  } else if (document.getElementById('renewalFromNowAccumulate').checked) {
-                      hintElement.textContent = '从今天开始 + 续期周期 + 剩余天数（推荐）';
-                      // 恢复原始到期日期
-                      const server = servers.find(s => s.id === currentRenewalServerId);
-                      if (server && server.expireDate) {
-                          currentExpireDateInput.value = server.expireDate;
-                      }
-                      currentExpireDateLabel.textContent = '当前到期日期';
                   } else if (document.getElementById('renewalFromExpire').checked) {
-                      hintElement.textContent = '从原到期日期 + 续期周期';
+                      hintElement.textContent = '从原到期日期 + 续期周期（保留剩余天数）';
                       // 恢复原始到期日期
                       const server = servers.find(s => s.id === currentRenewalServerId);
                       if (server && server.expireDate) {
@@ -7546,22 +7533,17 @@ export default {
               document.getElementById('renewalUnit').value = unit;
               
               // 智能选择续期起始日期类型
-              // 如果服务器有保存的续期偏好，使用保存的偏好（但排除"自定义"）
-              // 如果上次是"自定义"或从未续过期，默认选择"从到期日期开始"
-              // 如果续过期但没有偏好，默认选择"从当前日期累计"
-              let defaultRenewalType = 'nowAccumulate'; // 默认值
+              // 如果服务器有保存的续期偏好，使用保存的偏好（但排除"自定义"和已废弃的"从当前日期累计"）
+              // 否则默认选择"从到期日期开始"
+              let defaultRenewalType = 'expire'; // 默认值
               
-              if (server.lastRenewalType && server.lastRenewalType !== 'custom') {
-                  // 有保存的偏好且不是"自定义"，使用保存的偏好
+              if (server.lastRenewalType && server.lastRenewalType !== 'custom' && server.lastRenewalType !== 'nowAccumulate') {
+                  // 有保存的偏好且不是"自定义"或"从当前日期累计"，使用保存的偏好
                   defaultRenewalType = server.lastRenewalType;
-              } else if (!server.lastRenewalDate || server.lastRenewalType === 'custom') {
-                  // 从未续过期，或上次是"自定义"，默认选择"从到期日期开始"
-                  defaultRenewalType = 'expire';
               }
               
               // 设置单选按钮
               document.getElementById('renewalFromNow').checked = (defaultRenewalType === 'now');
-              document.getElementById('renewalFromNowAccumulate').checked = (defaultRenewalType === 'nowAccumulate');
               document.getElementById('renewalFromExpire').checked = (defaultRenewalType === 'expire');
               document.getElementById('renewalCustom').checked = (defaultRenewalType === 'custom');
               
@@ -7702,7 +7684,6 @@ export default {
               // 获取用户选择的起始日期类型
               const startFromExpire = document.getElementById('renewalFromExpire').checked;
               const startFromNow = document.getElementById('renewalFromNow').checked;
-              const startFromNowAccumulate = document.getElementById('renewalFromNowAccumulate').checked;
               const isCustom = document.getElementById('renewalCustom').checked;
               
               // 如果是自定义模式，不自动计算
@@ -7719,49 +7700,15 @@ export default {
               let newExpireDate;
               
               if (startFromExpire) {
-                  // 从到期日期开始
+                  // 从到期日期开始（保留剩余天数）
                   newExpireDate = new Date(currentExpireDate);
               } else if (startFromNow) {
-                  // 从当前日期开始（直接替换）
+                  // 从当前日期开始（从今天往后加续期周期）
                   newExpireDate = new Date();
                   newExpireDate.setHours(0, 0, 0, 0); // 重置时间为当天0点
-              } else if (startFromNowAccumulate) {
-                  // 从当前日期累计（当前日期 + 续期周期 + 剩余天数）
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  const expireDate = new Date(currentExpireDate);
-                  
-                  // 计算剩余天数（可能为负数，表示已过期）
-                  const daysRemaining = Math.ceil((expireDate - today) / (1000 * 60 * 60 * 24));
-                  
-                  // 先从当前日期开始
-                  newExpireDate = new Date(today);
-                  
-                  // 添加续期周期
-                  switch (renewalUnit) {
-                      case '天':
-                          newExpireDate.setDate(newExpireDate.getDate() + renewalNumber);
-                          break;
-                      case '月':
-                          newExpireDate.setMonth(newExpireDate.getMonth() + renewalNumber);
-                          break;
-                      case '年':
-                          newExpireDate.setFullYear(newExpireDate.getFullYear() + renewalNumber);
-                          break;
-                  }
-                  
-                  // 如果还未过期，累加剩余天数
-                  if (daysRemaining > 0) {
-                      newExpireDate.setDate(newExpireDate.getDate() + daysRemaining);
-                  }
-                  
-                  // 格式化日期为 YYYY-MM-DD
-                  const formattedDate = newExpireDate.toISOString().split('T')[0];
-                  document.getElementById('newExpireDate').value = formattedDate;
-                  return;
               }
               
-              // 对于"从到期日期开始"和"从当前日期开始"，正常添加续期周期
+              // 添加续期周期
               switch (renewalUnit) {
                   case '天':
                       newExpireDate.setDate(newExpireDate.getDate() + renewalNumber);
@@ -7774,8 +7721,11 @@ export default {
                       break;
               }
               
-              // 格式化日期为 YYYY-MM-DD
-              const formattedDate = newExpireDate.toISOString().split('T')[0];
+              // 格式化日期为 YYYY-MM-DD（使用本地时间）
+              const year = newExpireDate.getFullYear();
+              const month = String(newExpireDate.getMonth() + 1).padStart(2, '0');
+              const day = String(newExpireDate.getDate()).padStart(2, '0');
+              const formattedDate = year + '-' + month + '-' + day;
               document.getElementById('newExpireDate').value = formattedDate;
           }
           
@@ -7791,11 +7741,9 @@ export default {
                   const renewalPeriod = \`\${renewalNumber}\${renewalUnit}\`;
                   
                   // 获取用户选择的续期类型
-                  let renewalType = 'nowAccumulate'; // 默认值
+                  let renewalType = 'expire'; // 默认值
                   if (document.getElementById('renewalFromNow').checked) {
                       renewalType = 'now';
-                  } else if (document.getElementById('renewalFromNowAccumulate').checked) {
-                      renewalType = 'nowAccumulate';
                   } else if (document.getElementById('renewalFromExpire').checked) {
                       renewalType = 'expire';
                   } else if (document.getElementById('renewalCustom').checked) {
